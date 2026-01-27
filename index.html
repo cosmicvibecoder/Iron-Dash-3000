@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Infinity Run: Avenger's Protocol</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #1a1a1d;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            color: white;
+            overflow: hidden;
+        }
+
+        #gameContainer {
+            position: relative;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.2);
+            border: 2px solid #444;
+        }
+
+        canvas {
+            background: linear-gradient(to bottom, #0f0c29, #302b63, #24243e);
+            display: block;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            pointer-events: none;
+        }
+
+        #score {
+            font-size: 24px;
+            font-weight: bold;
+            text-shadow: 2px 2px 0 #000;
+        }
+
+        #startScreen, #gameOverScreen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            background: rgba(0, 0, 0, 0.85);
+            padding: 20px 40px;
+            border-radius: 10px;
+            border: 1px solid gold;
+        }
+
+        h1 { margin: 0 0 10px 0; color: gold; }
+        p { margin: 5px 0; color: #ddd; }
+        
+        .hidden { display: none; }
+        
+        button {
+            margin-top: 15px;
+            padding: 10px 20px;
+            background: #b71c1c;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            border-radius: 5px;
+            font-family: inherit;
+        }
+        button:hover { background: #d32f2f; }
+    </style>
+</head>
+<body>
+
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="800" height="400"></canvas>
+        
+        <div id="ui-layer">
+            <div id="score">Stones: 0</div>
+        </div>
+
+        <div id="startScreen">
+            <h1>Infinity Run</h1>
+            <p>You are Iron Man.</p>
+            <p>Jump: <strong>Spacebar</strong> or <strong>Click</strong></p>
+            <p>Avoid Thanos (Purple). Collect Stones.</p>
+            <button onclick="startGame()">ASSEMBLE</button>
+        </div>
+
+        <div id="gameOverScreen" class="hidden">
+            <h1 style="color: #b71c1c;">DEFEAT</h1>
+            <p id="finalScore">Stones Collected: 0</p>
+            <p>Thanos has snapped.</p>
+            <button onclick="resetGame()">TRY AGAIN</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreEl = document.getElementById('score');
+        const startScreen = document.getElementById('startScreen');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        const finalScoreEl = document.getElementById('finalScore');
+
+        // Game State
+        let isPlaying = false;
+        let score = 0;
+        let frames = 0;
+        let gameSpeed = 6;
+        let animationId;
+
+        // Colors for Infinity Stones
+        const stoneColors = [
+            '#e633d6', // Power (Purple-ish)
+            '#334fe6', // Space (Blue)
+            '#e63333', // Reality (Red)
+            '#e68f33', // Soul (Orange)
+            '#33e64f', // Time (Green)
+            '#e6e333'  // Mind (Yellow)
+        ];
+
+        // Player (Iron Man)
+        const player = {
+            x: 50,
+            y: canvas.height - 70,
+            width: 30,
+            height: 50,
+            dy: 0,
+            jumpForce: 15,
+            gravity: 0.6,
+            grounded: true,
+            originalY: canvas.height - 70, // set in init
+            
+            draw: function() {
+                // Main Body (Red)
+                ctx.fillStyle = '#b71c1c';
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+                
+                // Helmet/Face (Gold)
+                ctx.fillStyle = '#ffd700';
+                ctx.fillRect(this.x + 5, this.y + 5, 20, 15);
+                
+                // Arc Reactor (Cyan Glow)
+                ctx.fillStyle = '#00ffff';
+                ctx.beginPath();
+                ctx.arc(this.x + 15, this.y + 30, 4, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = '#00ffff';
+                ctx.stroke();
+                ctx.shadowBlur = 0; // reset shadow
+            },
+            
+            update: function() {
+                const groundY = canvas.height - this.height - 20;
+                
+                // Apply Gravity
+                this.dy += this.gravity;
+                this.y += this.dy;
+                
+                // Ground collision
+                if (this.y >= groundY) {
+                    this.y = groundY;
+                    this.dy = 0;
+                    this.grounded = true;
+                } else {
+                    this.grounded = false;
+                }
+                
+                this.draw();
+            },
+            
+            jump: function() {
+                if (this.grounded) {
+                    this.dy = -this.jumpForce;
+                }
+            }
+        };
+
+        // Entities arrays
+        let obstacles = [];
+        let stones = [];
+
+        class Obstacle {
+            constructor() {
+                this.width = 40;
+                this.height = 60;
+                this.x = canvas.width;
+                this.y = canvas.height - this.height - 20;
+                this.markedForDeletion = false;
+            }
+            
+            update() {
+                this.x -= gameSpeed;
+                if (this.x < -this.width) this.markedForDeletion = true;
+                this.draw();
+            }
+            
+            draw() {
+                // Thanos Body (Purple)
+                ctx.fillStyle = '#673ab7';
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+                
+                // Gold Armor detail
+                ctx.fillStyle = '#ffd700';
+                ctx.fillRect(this.x, this.y, this.width, 10); // Helmet
+                
+                // Chin lines (Thanos Chin)
+                ctx.strokeStyle = '#4527a0';
+                ctx.beginPath();
+                ctx.moveTo(this.x + 10, this.y + 15);
+                ctx.lineTo(this.x + 10, this.y + 35);
+                ctx.moveTo(this.x + 20, this.y + 15);
+                ctx.lineTo(this.x + 20, this.y + 35);
+                ctx.moveTo(this.x + 30, this.y + 15);
+                ctx.lineTo(this.x + 30, this.y + 35);
+                ctx.stroke();
+            }
+        }
+
+        class Stone {
+            constructor() {
+                this.radius = 10;
+                this.x = canvas.width;
+                // Random height (Low, Mid, High)
+                const heights = [canvas.height - 150, canvas.height - 100, canvas.height - 60];
+                this.y = heights[Math.floor(Math.random() * heights.length)];
+                this.color = stoneColors[Math.floor(Math.random() * stoneColors.length)];
+                this.markedForDeletion = false;
+            }
+            
+            update() {
+                this.x -= gameSpeed;
+                if (this.x < -this.radius) this.markedForDeletion = true;
+                this.draw();
+            }
+            
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                
+                // Glow Effect
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = this.color;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+                ctx.closePath();
+            }
+        }
+
+        // Functions
+        function spawnObstacles() {
+            // Spawn Thanos roughly every 100-200 frames depending on speed
+            if (frames % Math.floor(Math.random() * 50 + 100) === 0) {
+                obstacles.push(new Obstacle());
+            }
+        }
+
+        function spawnStones() {
+            // Spawn stones randomly
+            if (frames % 70 === 0) {
+                // Don't spawn if it would overlap immediately with a new obstacle
+                stones.push(new Stone());
+            }
+        }
+
+        function checkCollisions() {
+            // Check Obstacles (Thanos)
+            obstacles.forEach(obs => {
+                if (
+                    player.x < obs.x + obs.width &&
+                    player.x + player.width > obs.x &&
+                    player.y < obs.y + obs.height &&
+                    player.y + player.height > obs.y
+                ) {
+                    gameOver();
+                }
+            });
+
+            // Check Stones
+            stones.forEach((stone, index) => {
+                // Simple Circle vs Rectangle collision approx
+                if (
+                    player.x < stone.x + stone.radius &&
+                    player.x + player.width > stone.x - stone.radius &&
+                    player.y < stone.y + stone.radius &&
+                    player.y + player.height > stone.y - stone.radius
+                ) {
+                    // Collected!
+                    stones.splice(index, 1);
+                    score++;
+                    scoreEl.innerText = "Stones: " + score;
+                    // Slightly increase speed every 5 stones
+                    if (score % 5 === 0) gameSpeed += 0.5;
+                }
+            });
+        }
+
+        function drawGround() {
+            ctx.fillStyle = '#555';
+            ctx.fillRect(0, canvas.height - 20, canvas.width, 20);
+        }
+
+        function animate() {
+            if (!isPlaying) return;
+
+            animationId = requestAnimationFrame(animate);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            frames++;
+
+            drawGround();
+            
+            // Manage Player
+            player.update();
+
+            // Manage Obstacles
+            spawnObstacles();
+            obstacles.forEach((obs, index) => {
+                obs.update();
+                if (obs.markedForDeletion) obstacles.splice(index, 1);
+            });
+
+            // Manage Stones
+            spawnStones();
+            stones.forEach((stone, index) => {
+                stone.update();
+                if (stone.markedForDeletion) stones.splice(index, 1);
+            });
+
+            checkCollisions();
+        }
+
+        function startGame() {
+            startScreen.classList.add('hidden');
+            gameOverScreen.classList.add('hidden');
+            isPlaying = true;
+            resetVariables();
+            animate();
+        }
+
+        function resetVariables() {
+            score = 0;
+            scoreEl.innerText = "Stones: 0";
+            gameSpeed = 6;
+            frames = 0;
+            obstacles = [];
+            stones = [];
+            player.y = canvas.height - player.height - 20;
+            player.dy = 0;
+        }
+
+        function gameOver() {
+            isPlaying = false;
+            cancelAnimationFrame(animationId);
+            finalScoreEl.innerText = "Stones Collected: " + score;
+            gameOverScreen.classList.remove('hidden');
+        }
+
+        function resetGame() {
+            startGame();
+        }
+
+        // Input Listeners
+        window.addEventListener('keydown', function(e) {
+            if (e.code === 'Space' || e.code === 'ArrowUp') {
+                if(isPlaying) player.jump();
+                // Prevent scrolling
+                e.preventDefault(); 
+            }
+            // Allow restarting with Space if game is over
+            if ((e.code === 'Space') && !isPlaying && !startScreen.classList.contains('hidden')) {
+                startGame();
+            } else if ((e.code === 'Space') && !isPlaying && !gameOverScreen.classList.contains('hidden')) {
+                resetGame();
+            }
+        });
+
+        // Click/Touch support
+        canvas.addEventListener('click', function(e) {
+            if(isPlaying) {
+                player.jump();
+                e.preventDefault();
+            }
+        });
+
+        // Touch support for mobile
+        canvas.addEventListener('touchstart', function(e) {
+            if(isPlaying) {
+                player.jump();
+                e.preventDefault();
+            }
+        });
+
+    </script>
+</body>
+</html>
