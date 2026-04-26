@@ -43,6 +43,23 @@
             text-shadow: 2px 2px 0 #000;
         }
 
+        #changeCharacterBtn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            margin-top: 0;
+            background: #1f3b4d;
+            border: 1px solid #8dc7e8;
+            font-size: 13px;
+            padding: 8px 14px;
+            z-index: 5;
+            pointer-events: auto;
+        }
+
+        #changeCharacterBtn:hover {
+            background: #285067;
+        }
+
         #startScreen, #gameOverScreen {
             position: absolute;
             top: 50%;
@@ -57,6 +74,10 @@
 
         h1 { margin: 0 0 10px 0; color: gold; }
         p { margin: 5px 0; color: #ddd; }
+
+        .defeat-title {
+            color: #b71c1c;
+        }
         
         .hidden { display: none; }
         
@@ -83,16 +104,18 @@
             <div id="score">Stones: 0</div>
         </div>
 
+        <button id="changeCharacterBtn" onclick="goToCharacterSelect()">Change Character</button>
+
         <div id="startScreen">
             <h1>Infinity Run</h1>
-            <p>You are Iron Man.</p>
+            <p id="selectedHeroText">You are Iron Man.</p>
             <p>Jump: <strong>Spacebar</strong> or <strong>Click</strong></p>
             <p>Avoid Thanos (Purple). Collect Stones.</p>
             <button onclick="startGame()">ASSEMBLE</button>
         </div>
 
         <div id="gameOverScreen" class="hidden">
-            <h1 style="color: #b71c1c;">DEFEAT</h1>
+            <h1 class="defeat-title">DEFEAT</h1>
             <p id="finalScore">Stones Collected: 0</p>
             <p>Thanos has snapped.</p>
             <button onclick="resetGame()">TRY AGAIN</button>
@@ -106,6 +129,53 @@
         const startScreen = document.getElementById('startScreen');
         const gameOverScreen = document.getElementById('gameOverScreen');
         const finalScoreEl = document.getElementById('finalScore');
+        const selectedHeroText = document.getElementById('selectedHeroText');
+
+        const characterRoster = {
+            'iron-man': {
+                name: 'Iron Man',
+                body: '#b71c1c',
+                accent: '#ffd700',
+                glow: '#00ffff'
+            },
+            'captain-america': {
+                name: 'Captain America',
+                body: '#1e3a8a',
+                accent: '#ffffff',
+                glow: '#ef4444'
+            },
+            'hulk': {
+                name: 'Hulk',
+                body: '#2e7d32',
+                accent: '#7c3aed',
+                glow: '#99f6a8'
+            },
+            'thor': {
+                name: 'Thor',
+                body: '#374151',
+                accent: '#60a5fa',
+                glow: '#facc15'
+            },
+            'black-widow': {
+                name: 'Black Widow',
+                body: '#111827',
+                accent: '#dc2626',
+                glow: '#f97316'
+            },
+            'hawkeye': {
+                name: 'Hawkeye',
+                body: '#4c1d95',
+                accent: '#d1d5db',
+                glow: '#a78bfa'
+            }
+        };
+
+        const selectedCharacterKey = localStorage.getItem('selectedCharacter');
+        if (!selectedCharacterKey || !characterRoster[selectedCharacterKey]) {
+            window.location.href = 'character.html';
+        }
+        const selectedCharacter = characterRoster[selectedCharacterKey] || characterRoster['iron-man'];
+        selectedHeroText.innerText = 'You are ' + selectedCharacter.name + '.';
 
         // Game State
         let isPlaying = false;
@@ -124,7 +194,7 @@
             '#e6e333'  // Mind (Yellow)
         ];
 
-        // Player (Iron Man)
+        // Player (Selected Hero)
         const player = {
             x: 50,
             y: canvas.height - 70,
@@ -137,23 +207,46 @@
             originalY: canvas.height - 70, // set in init
             
             draw: function() {
-                // Main Body (Red)
-                ctx.fillStyle = '#b71c1c';
+                // Hero suit/body
+                ctx.fillStyle = selectedCharacter.body;
                 ctx.fillRect(this.x, this.y, this.width, this.height);
                 
-                // Helmet/Face (Gold)
-                ctx.fillStyle = '#ffd700';
+                // Head/helmet
+                ctx.fillStyle = selectedCharacter.accent;
                 ctx.fillRect(this.x + 5, this.y + 5, 20, 15);
-                
-                // Arc Reactor (Cyan Glow)
-                ctx.fillStyle = '#00ffff';
+
+                // Chest glow
+                ctx.fillStyle = selectedCharacter.glow;
                 ctx.beginPath();
                 ctx.arc(this.x + 15, this.y + 30, 4, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.shadowBlur = 10;
-                ctx.shadowColor = '#00ffff';
+                ctx.shadowColor = selectedCharacter.glow;
                 ctx.stroke();
                 ctx.shadowBlur = 0; // reset shadow
+
+                // Simple hero-specific emblem details
+                if (selectedCharacterKey === 'captain-america') {
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.beginPath();
+                    ctx.arc(this.x + 15, this.y + 38, 8, 0, Math.PI * 2);
+                    ctx.stroke();
+                } else if (selectedCharacterKey === 'thor') {
+                    ctx.fillStyle = '#93c5fd';
+                    ctx.fillRect(this.x + 22, this.y + 20, 7, 12);
+                } else if (selectedCharacterKey === 'hulk') {
+                    ctx.fillStyle = '#7c3aed';
+                    ctx.fillRect(this.x + 6, this.y + 40, 18, 6);
+                } else if (selectedCharacterKey === 'hawkeye') {
+                    ctx.strokeStyle = '#d1d5db';
+                    ctx.beginPath();
+                    ctx.moveTo(this.x + 2, this.y + 25);
+                    ctx.lineTo(this.x + 28, this.y + 25);
+                    ctx.stroke();
+                } else if (selectedCharacterKey === 'black-widow') {
+                    ctx.fillStyle = '#ef4444';
+                    ctx.fillRect(this.x + 12, this.y + 16, 6, 20);
+                }
             },
             
             update: function() {
@@ -364,6 +457,10 @@
 
         function resetGame() {
             startGame();
+        }
+
+        function goToCharacterSelect() {
+            window.location.href = 'character.html';
         }
 
         // Input Listeners
